@@ -17,7 +17,7 @@
         <div class="usage-tips">
           <h3>📋 使用说明</h3>
           <ul>
-            <li>支持拖拽或点击上传CSV文件</li>
+            <li>拖拽或点击上传CSV文件</li>
             <li>解析成功后自动跳转到数据页</li>
             <li>数据在浏览器本地处理，不上传服务器</li>
           </ul>
@@ -26,7 +26,7 @@
       
       <!-- 页脚 -->
       <div class="home-footer">
-        <p>纯前端分析工具 | 数据本地处理</p>
+        <p>CSV文件分析工具 | version 1.0.0</p>
       </div>
     </div>
   </div>
