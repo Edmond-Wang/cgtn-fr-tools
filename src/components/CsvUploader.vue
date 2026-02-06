@@ -62,9 +62,11 @@
     <!-- 解析状态显示区域 -->
     <div v-if="isParsing" class="parse-status">
       <el-alert :title="parseStatus" type="info" :closable="false" show-icon />
-      <div class="progress-indicator">
-        <i class="el-icon-loading" style="margin-right: 8px"></i>
-        正在处理，请稍候...
+      <div class="progress-container">
+        <div class="progress-text">
+          <i class="el-icon-loading" style="margin-right: 8px"></i>
+          {{ "正在处理，请稍候..." }}
+        </div>
       </div>
     </div>
 
@@ -95,18 +97,21 @@
     </div>
 
     <!-- 浏览器兼容性提示区域 -->
-    <div v-if="showBrowserWarning" class="browser-warning">
+    <div v-if="browserInfo.showWarning" class="browser-warning">
       <el-alert
-        title="浏览器兼容性提示"
         type="warning"
         show-icon
         :closable="true"
-        @close="showBrowserWarning = false"
+        @close="browserInfo.showWarning = false"
       >
         <div slot="title">
           <i class="el-icon-warning" style="margin-right: 8px"></i>
-          检测到您正在使用可能存在兼容性问题的浏览器
+          浏览器兼容性提示
         </div>
+        <p>
+          检测到您正在使用 {{ browserInfo.name }}
+          {{ browserInfo.version }}，可能存在兼容性问题
+        </p>
         <p>建议使用 Chrome、Firefox、Edge 等现代浏览器获得最佳体验</p>
       </el-alert>
     </div>
@@ -147,12 +152,12 @@ export default {
       },
 
       // 浏览器检测
-      userAgent: navigator.userAgent,
-      isCompatibleBrowser: true,
-      showBrowserWarning: false,
-
-      // 加载提示实例
-      loadingInstance: null,
+      browserInfo: {
+        name: "",
+        version: "",
+        isCompatible: true,
+        showWarning: false,
+      },
     };
   },
 
@@ -209,14 +214,51 @@ export default {
      * 检测浏览器兼容性
      */
     detectBrowser() {
-      const ua = this.userAgent.toLowerCase();
+      const ua = navigator.userAgent.toLowerCase();
+      let browserName = "未知浏览器";
+      let browserVersion = "";
+      let isCompatible = true;
 
-      // 检测IE浏览器
-      if (ua.includes("msie") || ua.includes("trident")) {
-        this.isCompatibleBrowser = false;
-        this.showBrowserWarning = true;
-        console.error("IE浏览器不支持，请使用现代浏览器");
+      // 检测主要浏览器
+      if (ua.includes("edg")) {
+        browserName = "Microsoft Edge";
+        browserVersion = this.extractVersion(ua, /edg\/([\d.]+)/);
+      } else if (ua.includes("chrome") && !ua.includes("edge")) {
+        browserName = "Google Chrome";
+        browserVersion = this.extractVersion(ua, /chrome\/([\d.]+)/);
+      } else if (ua.includes("firefox")) {
+        browserName = "Mozilla Firefox";
+        browserVersion = this.extractVersion(ua, /firefox\/([\d.]+)/);
+      } else if (ua.includes("safari") && !ua.includes("chrome")) {
+        browserName = "Safari";
+        browserVersion = this.extractVersion(ua, /version\/([\d.]+)/);
+      } else if (ua.includes("msie") || ua.includes("trident")) {
+        browserName = "Internet Explorer";
+        browserVersion = this.extractVersion(ua, /(msie |rv:)([\d.]+)/);
+        isCompatible = false;
+      } else if (ua.includes("360se") || ua.includes("qihu")) {
+        browserName = "360浏览器";
+        isCompatible = false;
       }
+
+      this.browserInfo = {
+        name: browserName,
+        version: browserVersion,
+        isCompatible: isCompatible,
+        showWarning: !isCompatible,
+      };
+
+      if (!isCompatible) {
+        console.error(`${browserName}浏览器不支持，请使用现代浏览器`);
+      }
+    },
+
+    /**
+     * 提取浏览器版本号
+     */
+    extractVersion(ua, regex) {
+      const match = ua.match(regex);
+      return match ? match[1] : "未知版本";
     },
 
     /**
@@ -345,10 +387,10 @@ export default {
               用户代理: ${this.userAgent}
               文件名称: ${this.currentFile ? this.currentFile.name : "未知"}
               文件大小: ${
-        this.currentFile
-          ? (this.currentFile.size / 1024).toFixed(2) + "KB"
-          : "未知"
-      }
+                this.currentFile
+                  ? (this.currentFile.size / 1024).toFixed(2) + "KB"
+                  : "未知"
+              }
       浏览器信息: ${this.getBrowserInfo()}`;
     },
 
@@ -427,14 +469,6 @@ export default {
         return;
       }
 
-      // 添加加载提示
-      this.loadingInstance = this.$loading({
-        lock: true,
-        text: "正在解析CSV文件，请稍候...",
-        spinner: "el-icon-loading",
-        background: "rgba(0, 0, 0, 0.7)",
-      });
-
       // 重置状态
       this.isParsing = true;
       this.clearError();
@@ -458,10 +492,10 @@ export default {
       } catch (error) {
         this.handleParseError(error);
       } finally {
-        this.isParsing = false;
-        if (this.loadingInstance) {
-          this.loadingInstance.close();
-        }
+        // 延迟关闭解析状态，让用户看到完成状态
+        setTimeout(() => {
+          this.isParsing = false;
+        }, 800);
       }
     },
 
@@ -784,6 +818,15 @@ export default {
 .parse-status {
   margin-top: 20px;
   animation: slideIn 0.5s ease;
+}
+
+.progress-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  color: #409eff;
+  font-size: 0.9rem;
 }
 
 .progress-indicator {
