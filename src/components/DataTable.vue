@@ -1,7 +1,7 @@
 <template>
   <!-- 数据表格组件主容器 -->
   <div class="data-table">
-    <!-- 控制栏：包含日期选择器、标签搜索、复原按钮和表格信息 -->
+    <!-- 控制栏：包含日期选择器、标签搜索、复原按钮、表格信息 -->
     <div class="table-controls">
       <div class="controls-left">
         <!-- 日期区间选择器 -->
@@ -22,7 +22,7 @@
         <!-- 国家/落地媒体搜索区域 - 使用Element UI输入框+前置选择器 -->
         <el-input
           v-model="searchKeyword"
-          placeholder="请输入搜索内容"
+          placeholder="国家/落地媒体搜索"
           class="category-search-input input-with-select"
           size="medium"
         >
@@ -80,6 +80,8 @@
           >
             检索
           </el-button>
+          <!-- 流程指示箭头 -->
+          <i class="process-arrow el-icon-right"></i>
           <el-button
             type="success"
             size="medium"
@@ -129,6 +131,7 @@
         :cell-class-name="tableCellClassName"
         :class="{ 'no-data': filteredData.length === 0 }"
         v-loading="loading"
+        @cell-dblclick="handleCellDoubleClick"
       >
         <!-- 自定义空状态显示 -->
         <template #empty>
@@ -142,69 +145,13 @@
           :label="header"
           :min-width="getColumnWidth(header)"
         >
-          <template #default="{ row, $index, column }">
-            <div
-              class="cell-container"
-              @mouseenter="
-                handleCellHover($index, column.property, row[column.property])
-              "
+          <template #default="{ row, column }">
+            <span
+              class="simplified-cell-text"
+              :title="getCellTitle(row[column.property])"
             >
-              <!-- 单元格内容容器：处理长内容显示和样式 -->
-              <div
-                class="cell-content"
-                :class="{
-                  'is-long': isLongContent(row[column.property]),
-                  'fullscreen-expanded':
-                    isFullscreen && isLongContent(row[column.property]),
-                }"
-              >
-                <span class="cell-text">
-                  {{
-                    formatCellValue(row[column.property], row, column.property)
-                  }}
-                </span>
-              </div>
-
-              <!-- 单元格操作按钮：复制内容和查看详情 -->
-              <div
-                class="cell-actions"
-                v-if="
-                  row[column.property] != null && row[column.property] !== ''
-                "
-              >
-                <el-tooltip
-                  content="复制内容"
-                  placement="top"
-                  effect="light"
-                  :disabled="isFullscreen"
-                >
-                  <el-button
-                    type="text"
-                    size="mini"
-                    icon="el-icon-document-copy"
-                    @click.stop="copyCellContent(row[column.property])"
-                    class="cell-action-btn"
-                  />
-                </el-tooltip>
-                <!-- 使用v-if控制查看详情按钮在非全屏模式下显示 -->
-                <el-tooltip
-                  content="查看详情"
-                  placement="top"
-                  effect="light"
-                  v-if="!isFullscreen"
-                >
-                  <el-button
-                    type="text"
-                    size="mini"
-                    icon="el-icon-view"
-                    @click.stop="
-                      showCellDetail(row[column.property], header, $index + 1)
-                    "
-                    class="cell-action-btn"
-                  />
-                </el-tooltip>
-              </div>
-            </div>
+              {{ formatCellValue(row[column.property], row, column.property) }}
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -286,6 +233,19 @@
                       class="cell-action-btn"
                     />
                   </el-tooltip>
+                  <el-tooltip
+                    content="分媒体统计"
+                    placement="top"
+                    effect="light"
+                  >
+                    <el-button
+                      type="text"
+                      size="mini"
+                      icon="el-icon-s-data"
+                      @click.stop="showMediaStatistics"
+                      class="cell-action-btn"
+                    />
+                  </el-tooltip>
                 </div>
               </div>
             </template>
@@ -331,6 +291,20 @@
                           '署名作者+文章名'
                         )
                       "
+                      class="cell-action-btn"
+                    />
+                  </el-tooltip>
+                  <!-- 按作者名检索按钮 -->
+                  <el-tooltip
+                    content="按作者名检索"
+                    placement="top"
+                    effect="light"
+                  >
+                    <el-button
+                      type="text"
+                      size="mini"
+                      icon="el-icon-search"
+                      @click.stop="openAuthorSearchDialog(row.signatureInfo)"
                       class="cell-action-btn"
                     />
                   </el-tooltip>
@@ -386,9 +360,11 @@
             <span class="content-title">内容</span>
           </div>
           <div class="content-body">
-            <div class="content-text" ref="detailContent">
-              {{ detailContent }}
-            </div>
+            <div
+              class="content-text"
+              ref="detailContent"
+              v-text="detailContent"
+            ></div>
           </div>
         </div>
       </div>
@@ -400,7 +376,133 @@
         >
       </template>
     </el-dialog>
+    <!-- 分媒体统计对话框 -->
+    <el-dialog
+      title="分媒体统计"
+      :visible.sync="mediaStatisticsDialogVisible"
+      width="600px"
+      center
+      :close-on-click-modal="false"
+      :modal-append-to-body="false"
+      :append-to-body="true"
+      custom-class="media-statistics-dialog"
+      :modal="true"
+      :lock-scroll="false"
+    >
+      <div class="media-statistics-content">
+        <el-table
+          :data="mediaStatisticsData"
+          border
+          style="width: 100%"
+          size="small"
+          :show-header="true"
+        >
+          <el-table-column
+            prop="media"
+            label="媒体"
+            min-width="180"
+          ></el-table-column>
+          <el-table-column
+            prop="views"
+            label="次数"
+            width="120"
+          ></el-table-column>
+          <el-table-column
+            prop="articles"
+            label="篇数"
+            width="120"
+          ></el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="mediaStatisticsDialogVisible = false"
+          >关闭</el-button
+        >
+        <el-button type="primary" @click="copyMediaStatistics"
+          >复制统计</el-button
+        >
+      </template>
+    </el-dialog>
+    <!-- 作者名搜索对话框 -->
+    <el-dialog
+      title="请输入作者名"
+      :visible.sync="authorSearchDialogVisible"
+      width="400px"
+      center
+      :close-on-click-modal="false"
+      :modal-append-to-body="false"
+      :append-to-body="true"
+      custom-class="author-search-dialog"
+      :modal="true"
+      :lock-scroll="false"
+    >
+      <el-input
+        v-model="authorSearchKeyword"
+        placeholder="请输入作者名"
+        class="author-search-input"
+        size="medium"
+        @keyup.enter.native="searchByAuthor"
+      ></el-input>
+      <template #footer>
+        <el-button @click="authorSearchDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="searchByAuthor">确认</el-button>
+      </template>
+    </el-dialog>
+    <!-- 作者搜索结果对话框 -->
+    <el-dialog
+      title="作者搜索结果"
+      :visible.sync="authorResultDialogVisible"
+      width="700px"
+      center
+      :close-on-click-modal="false"
+      :modal-append-to-body="false"
+      :append-to-body="true"
+      custom-class="author-result-dialog"
+      :modal="true"
+      :lock-scroll="false"
+    >
+      <div class="cell-detail-content">
+        <!-- 信息卡片：显示搜索信息 -->
+        <div class="info-card">
+          <div class="info-header">
+            <i class="el-icon-info"></i>
+            <span class="info-title">信息</span>
+          </div>
+          <div class="info-content">
+            <div class="info-row">
+              <span class="info-value">
+                <span class="info-item column-item">“署名作者+文章名”</span>
+                <span class="info-separator">；</span>
+                <span class="info-item author-item"
+                  >作者: {{ currentAuthorName }}</span
+                >
+              </span>
+            </div>
+          </div>
+        </div>
+        <!-- 内容卡片：显示搜索结果 -->
+        <div class="content-card">
+          <div class="content-header">
+            <i class="el-icon-document"></i>
+            <span class="content-title">搜索结果</span>
+          </div>
+          <div class="content-body">
+            <div
+              class="content-text"
+              ref="authorResultContent"
+              v-text="authorResultContent"
+            ></div>
+          </div>
+        </div>
+      </div>
 
+      <template #footer>
+        <el-button @click="authorResultDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="copyAuthorResultContent"
+          >复制内容</el-button
+        >
+      </template>
+    </el-dialog>
     <!-- 右下角控制按钮组：包含滚动到顶部、底部和退出全屏按钮 -->
     <div class="control-buttons">
       <el-tooltip
@@ -512,30 +614,61 @@ export default {
       currentSequenceValue: null, // 当前分组的序号值
       hasSignatureArticleTag: false, // 标记是否包含"署名文章"标签
       loading: false, // 添加加载状态
+      mediaStatisticsDialogVisible: false, // 分媒体统计对话框显示状态
+      mediaStatisticsData: [], // 分媒体统计数据
+      authorSearchDialogVisible: false, // 作者搜索相关数据
+      authorResultDialogVisible: false,
+      authorSearchKeyword: "",
+      currentAuthorName: "",
+      authorResultContent: "",
+      allSignatureInfo: "",
+      columnWidthCache: {}, // 列宽缓存
     };
   },
 
   // 监听器：监听数据变化
   watch: {
     data: {
-      immediate: true, // 立即执行
+      immediate: true,
       handler: function (newData) {
-        // 处理数据：填充序号列空白值
-        const processedData = this.fillSequenceNumbers(newData);
-        // 过滤空列
-        const dataWithFilteredColumns = this.filterEmptyColumns(processedData);
-        this.originalData = dataWithFilteredColumns;
-        this.allData = dataWithFilteredColumns;
-        this.filteredData = dataWithFilteredColumns;
-        // 计算表格高度
-        this.$nextTick(function () {
-          this.calculateTableHeight();
-        });
+        console.log("🔍 开始数据处理，行数:", (newData && newData.length) || 0);
+
+        // 清空列宽缓存
+        this.columnWidthCache = {};
+
+        // 使用 setTimeout 将重型计算移出当前执行栈
+        setTimeout(() => {
+          console.time("⏱️ 数据处理总耗时");
+
+          const withSequenceData = this.fillSequenceNumbers(newData);
+          console.log("✅ fillSequenceNumbers 完成");
+
+          const processedData = this.fillGroupColumns(withSequenceData);
+          console.log("✅ fillGroupColumns 完成");
+
+          const dataWithFilteredColumns =
+            this.filterEmptyColumns(processedData);
+          console.log("✅ filterEmptyColumns 完成");
+
+          this.originalData = dataWithFilteredColumns;
+          this.allData = dataWithFilteredColumns;
+          this.filteredData = dataWithFilteredColumns;
+
+          console.timeEnd("⏱️ 数据处理总耗时");
+          console.log("🎉 数据处理完成，最终行数:", this.filteredData.length);
+
+          // 通知父组件数据已处理完毕，可以渲染
+          this.$emit("data-ready");
+
+          this.$nextTick(() => {
+            this.calculateTableHeight();
+          });
+        }, 0);
       },
     },
   },
 
-  // 生命周期钩子：组件挂载后
+  // 生命周期钩子
   mounted() {
     // 添加小延迟确保父容器已完全渲染
     setTimeout(() => {
@@ -544,12 +677,340 @@ export default {
     window.addEventListener("resize", this.calculateTableHeight);
   },
 
-  // 生命周期钩子：组件销毁前
   beforeDestroy() {
     window.removeEventListener("resize", this.calculateTableHeight); // 移除窗口大小变化监听
   },
 
   methods: {
+    // ------------------------------
+    // 数据处理相关方法
+    // ------------------------------
+
+    /**
+     * 获取单元格的title提示文字（用于原生title属性）
+     */
+    getCellTitle(value) {
+      if (value == null || value === "") return "";
+      const str = String(value);
+      // 如果内容较长，则显示完整内容作为悬停提示
+      return str.length > 50 ? str : "";
+    },
+
+    /**
+     * 处理单元格双击事件
+     */
+    handleCellDoubleClick(row, column, cell, event) {
+      // 获取当前双击的单元格信息
+      const cellValue = row[column.property];
+      const columnName = column.property;
+      // 计算行号（在 filteredData 中的索引+1）
+      const rowIndex = this.filteredData.indexOf(row);
+      const rowNumber = rowIndex >= 0 ? rowIndex + 1 : 1;
+
+      // 调用原有的详情显示方法
+      this.showCellDetail(cellValue, columnName, rowNumber);
+    },
+
+    /**
+     * 补全同一序号组的指定列数据
+     * 扩大搜索范围（前2个组）+ 中间组验证
+     * @param {Array} data - 原始数据
+     * @returns {Array} 补全后的数据
+     */
+    fillGroupColumns(data) {
+      if (!data || data.length === 0) return [];
+
+      console.time("⏱️ fillGroupColumns耗时");
+
+      // 1. 使用浅拷贝而非深拷贝
+      const processedData = data.map((row) => ({ ...row }));
+      const sequenceGroups = {};
+
+      // 2. 建立分组映射
+      processedData.forEach((row) => {
+        const groupId = row._sequenceGroup;
+        if (groupId) {
+          if (!sequenceGroups[groupId]) {
+            sequenceGroups[groupId] = [];
+          }
+          sequenceGroups[groupId].push(row);
+        }
+      });
+
+      // 3. 需要补全的列
+      const columnsToFill = ["稿件标题", "标签", "单条总结/主题总结放最新一条"];
+
+      // 4. 按分组ID排序（确保顺序处理）
+      const sortedGroupIds = Object.keys(sequenceGroups).sort((a, b) => {
+        const aIndex = processedData.findIndex(
+          (row) => row._sequenceGroup === a
+        );
+        const bIndex = processedData.findIndex(
+          (row) => row._sequenceGroup === b
+        );
+        return aIndex - bIndex;
+      });
+
+      // 5. 存储所有组的信息
+      const allGroupsInfo = [];
+
+      // 6. 收集所有组的信息
+      sortedGroupIds.forEach((groupId) => {
+        const group = sequenceGroups[groupId];
+        if (group.length === 0) return;
+
+        const firstRow = group[0];
+        allGroupsInfo.push({
+          groupId: groupId,
+          group: group,
+          firstRow: firstRow,
+          firstRowTitle: firstRow["稿件标题"] || "",
+          firstRowTag: firstRow["标签"] || "",
+          firstRowSummary: firstRow["单条总结/主题总结放最新一条"] || "",
+          processed: false,
+        });
+      });
+
+      // 7. 按顺序处理每个组
+      allGroupsInfo.forEach((currentGroupInfo, currentIndex) => {
+        const { groupId, group, firstRow, firstRowTag, firstRowSummary } =
+          currentGroupInfo;
+        if (group.length === 0) return;
+
+        // ✅ 修正：只有当标签和总结都不为空时才跳过
+        if (
+          firstRowTag &&
+          firstRowTag.trim() !== "" &&
+          firstRowSummary &&
+          firstRowSummary.trim() !== ""
+        ) {
+          return; // 标签和总结都已完整，静默跳过
+        }
+
+        // 记录当前组的状态
+        const needsTag = !firstRowTag || firstRowTag.trim() === "";
+        const needsSummary = !firstRowSummary || firstRowSummary.trim() === "";
+
+        if (needsTag || needsSummary) {
+          console.log(
+            `[补全] 组${groupId} 需要补全: ${needsTag ? "标签" : ""}${
+              needsSummary ? (needsTag ? "+总结" : "总结") : ""
+            }`
+          );
+        }
+
+        // 搜索范围：前2个组
+        const searchDepth = 2;
+        let foundMatch = false;
+        let matchSource = null;
+        let matchedIndex = -1;
+
+        // 8. 向前搜索最多2个组
+        for (let i = 1; i <= searchDepth; i++) {
+          const prevIndex = currentIndex - i;
+          if (prevIndex < 0) break;
+
+          const prevGroupInfo = allGroupsInfo[prevIndex];
+          if (!prevGroupInfo) continue;
+
+          // 计算相似度
+          const currentTitle = firstRow["稿件标题"] || "";
+          const prevTitle = prevGroupInfo.firstRowTitle;
+          const similarity = this.calculateTitleSimilarity(
+            currentTitle,
+            prevTitle
+          );
+
+          // 从实际数据中获取标签状态
+          const prevFirstRow = prevGroupInfo.firstRow;
+          const actualPrevTag = prevFirstRow["标签"] || "";
+          const actualPrevSummary =
+            prevFirstRow["单条总结/主题总结放最新一条"] || "";
+
+          const hasValidTag = actualPrevTag && actualPrevTag.trim() !== "";
+          const hasValidSummary =
+            actualPrevSummary && actualPrevSummary.trim() !== "";
+
+          // 相似度 >= 0.4 且前一个组有标签
+          if (similarity >= 0.4 && hasValidTag) {
+            // 9. 检查中间的所有组是否标签都为空
+            let allMiddleEmpty = true;
+
+            for (let j = prevIndex + 1; j < currentIndex; j++) {
+              const middleGroup = allGroupsInfo[j];
+              if (!middleGroup) continue;
+
+              // 从实际数据中检查标签状态
+              const middleFirstRow = middleGroup.firstRow;
+              const middleActualTag = middleFirstRow["标签"] || "";
+              const middleActualSummary =
+                middleFirstRow["单条总结/主题总结放最新一条"] || "";
+
+              if (
+                middleActualTag.trim() !== "" ||
+                middleActualSummary.trim() !== ""
+              ) {
+                allMiddleEmpty = false;
+                console.log(
+                  `   ✗ 中间有非空组 ${middleGroup.groupId}，无法补全`
+                );
+                break;
+              }
+            }
+
+            // 10. 如果中间组标签都为空，则匹配成功
+            if (allMiddleEmpty) {
+              console.log(
+                `   ✅ 找到匹配: 与组${
+                  prevGroupInfo.groupId
+                } 相似度${similarity.toFixed(2)}`
+              );
+
+              foundMatch = true;
+              matchSource = prevGroupInfo;
+              matchedIndex = prevIndex;
+              break;
+            }
+          }
+        }
+
+        // 11. 如果找到匹配，执行补全
+        if (foundMatch && matchSource) {
+          // 从实际数据中获取标签和总结值
+          const matchFirstRow = matchSource.firstRow;
+          const sourceTag = matchFirstRow["标签"] || "";
+          const sourceSummary =
+            matchFirstRow["单条总结/主题总结放最新一条"] || "";
+
+          // 补全当前组
+          group.forEach((row) => {
+            if (!row["标签"] || row["标签"].trim() === "") {
+              row["标签"] = sourceTag;
+            }
+            if (
+              !row["单条总结/主题总结放最新一条"] ||
+              row["单条总结/主题总结放最新一条"].trim() === ""
+            ) {
+              row["单条总结/主题总结放最新一条"] = sourceSummary;
+            }
+          });
+
+          console.log(`   ↪ 已补全当前组${groupId} 标签: "${sourceTag}"`);
+
+          // 更新当前组缓存
+          currentGroupInfo.firstRowTag = sourceTag;
+          currentGroupInfo.firstRowSummary = sourceSummary;
+          currentGroupInfo.processed = true;
+
+          // 12. 补全中间组（如果存在）
+          for (let j = matchedIndex + 1; j < currentIndex; j++) {
+            const middleGroup = allGroupsInfo[j];
+            if (!middleGroup || middleGroup.processed) continue;
+
+            console.log(`   ↪ 同时补全中间组${middleGroup.groupId}`);
+
+            middleGroup.group.forEach((row) => {
+              if (!row["标签"] || row["标签"].trim() === "") {
+                row["标签"] = sourceTag;
+              }
+              if (
+                !row["单条总结/主题总结放最新一条"] ||
+                row["单条总结/主题总结放最新一条"].trim() === ""
+              ) {
+                row["单条总结/主题总结放最新一条"] = sourceSummary;
+              }
+            });
+
+            // 更新中间组缓存
+            middleGroup.firstRowTag = sourceTag;
+            middleGroup.firstRowSummary = sourceSummary;
+            middleGroup.processed = true;
+          }
+        } else if (needsTag || needsSummary) {
+          console.log(`   ❌ 未找到可匹配的组: 相似度不足或无有效标签源`);
+        }
+      });
+
+      // 13. 处理组内的补全逻辑（原有逻辑保留）
+      sortedGroupIds.forEach((groupId) => {
+        const group = sequenceGroups[groupId];
+        if (group.length === 0) return;
+
+        const columnValues = {};
+        columnsToFill.forEach((column) => {
+          const nonEmptyRow = group.find(
+            (row) =>
+              row[column] !== undefined &&
+              row[column] !== null &&
+              row[column] !== ""
+          );
+          if (nonEmptyRow) {
+            columnValues[column] = nonEmptyRow[column];
+          }
+        });
+
+        // 补全组内所有行的空列
+        group.forEach((row) => {
+          columnsToFill.forEach((column) => {
+            if (
+              row[column] === undefined ||
+              row[column] === null ||
+              row[column] === ""
+            ) {
+              if (
+                column === "标签" &&
+                row["标签"] &&
+                row["标签"].trim() !== ""
+              ) {
+                return;
+              }
+              if (
+                column === "单条总结/主题总结放最新一条" &&
+                row["单条总结/主题总结放最新一条"] &&
+                row["单条总结/主题总结放最新一条"].trim() !== ""
+              ) {
+                return;
+              }
+
+              if (columnValues[column] !== undefined) {
+                row[column] = columnValues[column];
+              }
+            }
+          });
+        });
+      });
+
+      console.timeEnd("⏱️ fillGroupColumns耗时");
+      return processedData;
+    },
+
+    /**
+     * 计算两个标题前10个字符的相似度
+     * @param {string} title1 - 标题1
+     * @param {string} title2 - 标题2
+     * @returns {number} 相似度(0-1)
+     */
+    calculateTitleSimilarity(title1, title2) {
+      // 取前10个字符进行比较
+      const str1 = title1.substring(0, 10);
+      const str2 = title2.substring(0, 10);
+
+      // 计算两个字符串的最大长度
+      const maxLength = Math.max(str1.length, str2.length);
+      if (maxLength === 0) return 1; // 两个都是空字符串
+
+      // 计算相同字符的数量
+      let sameCount = 0;
+      for (let i = 0; i < Math.min(str1.length, str2.length); i++) {
+        if (str1[i] === str2[i]) {
+          sameCount++;
+        }
+      }
+
+      // 返回相似度（相同字符数/最大长度）
+      return sameCount / maxLength;
+    },
+
     /**
      * 过滤空列（除表头外完全没有内容的列）
      * @param {Array} data - 原始数据
@@ -597,6 +1058,71 @@ export default {
     },
 
     /**
+     * 填充序号列的空白值
+     * @param {Array} data - 原始数据
+     * @returns {Array} 处理后的新数据
+     */
+    fillSequenceNumbers(data) {
+      if (!data || data.length === 0) return data || [];
+
+      const processedData = JSON.parse(JSON.stringify(data));
+      const sequenceColumn = "序号"; // 明确指定序号列名称
+
+      // 智能填充序号并添加分组标识
+      let lastSequenceValue = null;
+      let currentGroup = null; // 当前分组标识
+
+      processedData.forEach((row) => {
+        const currentValue = row[sequenceColumn];
+
+        if (currentValue != null && currentValue !== "") {
+          // 遇到新的有效序号值，开始新分组
+          lastSequenceValue = currentValue;
+          currentGroup = currentValue;
+          row[`${sequenceColumn}_isOriginal`] = true;
+        } else if (lastSequenceValue != null) {
+          // 空白值，继承上一个有效序号的分组，但不填充序号值
+          row[`${sequenceColumn}_isFilled`] = true;
+        }
+
+        // 为每一行添加分组标识
+        row._sequenceGroup = currentGroup;
+      });
+
+      return processedData;
+    },
+
+    /**
+     * 为每个分组的第一行添加序号
+     */
+    addSequenceToGroupFirstRows() {
+      if (!this.filteredData || this.filteredData.length === 0) return;
+
+      const firstHeader = this.headers[0] || "序号";
+      let lastGroup = null;
+
+      this.filteredData.forEach((row) => {
+        const currentGroup = row._sequenceGroup;
+
+        // 如果是新分组的第一行且序号为空，则添加分组序号
+        if (
+          currentGroup &&
+          currentGroup !== lastGroup &&
+          (!row[firstHeader] || row[firstHeader] === "")
+        ) {
+          row[firstHeader] = currentGroup;
+          row[`${firstHeader}_isFiltered`] = true; // 标记为筛选时添加的序号
+        }
+
+        lastGroup = currentGroup;
+      });
+    },
+
+    // ------------------------------
+    // 搜索和筛选相关方法
+    // ------------------------------
+
+    /**
      * 处理日期范围变化
      */
     handleDateChange() {
@@ -615,39 +1141,263 @@ export default {
     },
 
     /**
-     * 解析日期字符串
-     * @param {string} dateStr - 日期字符串，如"2025年1月2日"或"1月2日"
-     * @returns {Date} 解析后的日期对象
+     * 根据日期范围和标签搜索数据
      */
-    parseDate(dateStr) {
-      if (!dateStr) return null;
+    searchByDateRange() {
+      // 增强验证逻辑
+      if (this.searchKeyword && this.searchKeyword.trim() !== "") {
+        if (!this.searchType || this.searchType.trim() === "") {
+          // 1. 弹出警告提示
+          this.$message.warning({
+            message: "请先在左侧下拉框中选择国家或落地媒体选项，然后再进行搜索",
+            center: true,
+            duration: 3000,
+            showClose: true,
+          });
 
-      // 检查是否包含年份
-      const hasYear = /\d{4}年/.test(dateStr);
+          const searchTypeSelect = document.querySelector(
+            ".search-type-select .el-input__inner"
+          );
+          if (searchTypeSelect) {
+            // 添加红色边框提示
+            searchTypeSelect.style.borderColor = "#f56c6c";
+            searchTypeSelect.style.boxShadow =
+              "0 0 0 2px rgba(245, 108, 108, 0.1)";
 
-      // 提取年、月、日
-      let year, month, day;
+            // 3秒后恢复
+            setTimeout(() => {
+              searchTypeSelect.style.borderColor = "";
+              searchTypeSelect.style.boxShadow = "";
+            }, 3000);
+          }
 
-      if (hasYear) {
-        // 带年份的格式：YYYY年MM月DD日
-        const match = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-        if (!match) return null;
+          return; // 阻止搜索流程
+        }
+      }
+      // 先应用日期筛选
+      let filtered = JSON.parse(JSON.stringify(this.originalData));
+      if (this.dateRange && this.dateRange.length === 2) {
+        const startDate = new Date(this.dateRange[0]);
+        const endDate = new Date(this.dateRange[1]);
 
-        year = parseInt(match[1]);
-        month = parseInt(match[2]) - 1; // 月份从0开始
-        day = parseInt(match[3]);
-      } else {
-        // 不带年份的格式：MM月DD日，默认使用当前年份
-        const match = dateStr.match(/(\d{1,2})月(\d{1,2})日/);
-        if (!match) return null;
+        // 显式设置时间部分，确保包含整个日期
+        startDate.setHours(0, 0, 0, 0); // 起始日期从当天0点开始
+        endDate.setHours(23, 59, 59, 999); // 结束日期到当天23:59:59结束
 
-        year = new Date().getFullYear();
-        month = parseInt(match[1]) - 1; // 月份从0开始
-        day = parseInt(match[2]);
+        if (endDate < startDate) {
+          this.$message.warning({
+            message: "结束日期不能早于开始日期",
+            center: true,
+          });
+          return;
+        }
+
+        // 筛选日期在范围内的数据
+        filtered = filtered.filter((row) => {
+          if (!row["日期"]) return false;
+
+          const rowDate = this.parseDate(row["日期"]);
+          if (!rowDate) return false;
+
+          return rowDate >= startDate && rowDate <= endDate;
+        });
       }
 
-      return new Date(year, month, day);
+      // 应用国家/落地媒体搜索筛选
+      if (this.searchType && this.searchKeyword) {
+        const keyword = this.searchKeyword.toLowerCase();
+        filtered = filtered.filter((row) => {
+          if (!row[this.searchType]) return false;
+          return String(row[this.searchType]).toLowerCase().includes(keyword);
+        });
+      }
+
+      // 再应用标签筛选
+      filtered = this.filterByTags(filtered, this.tagExpression);
+
+      // 使用深拷贝避免修改原始数据
+      this.filteredData = JSON.parse(JSON.stringify(filtered));
+
+      // 触发筛选数据变化事件
+      this.$emit("filter-change", this.filteredData);
+
+      // 为每个分组的第一行添加序号
+      this.addSequenceToGroupFirstRows();
+
+      // 重置分组信息，确保筛选后重新计算分组颜色
+      this.sequenceGroups = null;
+      this.currentGroupId = 0;
+
+      // 如果没有筛选结果，显示提示信息
+      if (this.filteredData.length === 0) {
+        this.$message.info({
+          message: "没有找到符合条件的数据",
+          center: true,
+        });
+      } else {
+        // 检索成功提示
+        this.$message.success({
+          message: "检索成功",
+          center: true,
+        });
+      }
     },
+
+    /**
+     * 重置表格到初始状态
+     */
+    resetTable() {
+      // 保存当前状态用于比较
+      const currentState = {
+        dateRange: [...this.dateRange],
+        tagExpression: this.tagExpression,
+        searchType: this.searchType,
+        searchKeyword: this.searchKeyword,
+        filteredDataLength: this.filteredData.length,
+      };
+
+      // 强制重置所有筛选条件
+      this.dateRange = [];
+      this.isDateRangeInvalid = false;
+      this.tagExpression = "";
+      this.expressionError = "";
+      this.searchType = "";
+      this.searchKeyword = "";
+      // 重置署名文章标签状态
+      this.hasSignatureArticleTag = false;
+      // 强制恢复原始数据（使用深拷贝确保不修改原始数据）
+      this.filteredData = JSON.parse(JSON.stringify(this.originalData));
+      this.$emit("filter-change", this.filteredData);
+
+      // 完全清除所有添加的序号
+      const firstHeader = this.headers[0] || "序号";
+      this.filteredData.forEach((row) => {
+        // 清除所有可能的序号标记
+        if (row[`${firstHeader}_isFiltered`]) {
+          row[firstHeader] = "";
+          delete row[`${firstHeader}_isFiltered`];
+        }
+        // 确保原始序号只保留原始标记的
+        if (!row[`${firstHeader}_isOriginal`]) {
+          row[firstHeader] = "";
+        }
+      });
+
+      // 重置分组信息，确保重置后重新计算分组颜色
+      this.sequenceGroups = null;
+      this.currentGroupId = 0;
+
+      // 滚动到表格顶部
+      this.scrollToTop();
+
+      // 使用$nextTick确保DOM更新后再显示消息
+      this.$nextTick(() => {
+        this.$message.success({
+          message: "已复原表格",
+          center: true,
+          zIndex: 99999, // 确保消息在最上层显示
+        });
+      });
+    },
+
+    /**
+     * 根据标签表达式筛选数据
+     * @param {Array} data - 原始数据
+     * @param {string} expression - 标签搜索表达式
+     * @returns {Array} 筛选后的数据
+     */
+    filterByTags(data, expression) {
+      const trimmedExpr = expression.trim();
+      if (!trimmedExpr) return data;
+
+      try {
+        this.expressionError = "";
+        const tokens = this.tokenizeExpression(trimmedExpr);
+        const ast = this.parseExpression(tokens);
+
+        // 检查是否包含"署名文章"标签
+        this.hasSignatureArticleTag = trimmedExpr
+          .toLowerCase()
+          .includes("署名文章");
+
+        // 生成并输出逻辑表达式到控制台
+        const logicalString = this.astToLogicalString(ast);
+        console.log("标签搜索逻辑:", logicalString);
+
+        // 按序号组分组
+        const sequenceGroups = new Map();
+        data.forEach((row) => {
+          const groupId = row._sequenceGroup;
+          if (!groupId) return;
+
+          if (!sequenceGroups.has(groupId)) {
+            sequenceGroups.set(groupId, []);
+          }
+          sequenceGroups.get(groupId).push(row);
+        });
+
+        // 筛选符合条件的序号组
+        const matchedGroups = [];
+        sequenceGroups.forEach((groupRows) => {
+          // 使用组内第一行的标签作为整个组的标签
+          const firstRow = groupRows[0];
+          if (!firstRow["标签"]) return;
+
+          const groupTags = new Set(this.parseTags(firstRow["标签"]));
+          if (this.evaluateExpression(ast, groupTags)) {
+            matchedGroups.push(...groupRows);
+          }
+        });
+
+        return matchedGroups;
+      } catch (error) {
+        console.error("标签表达式解析错误:", error);
+        this.expressionError = `表达式错误: ${error.message}`;
+
+        // 尝试简单标签匹配作为回退方案
+        try {
+          const tag = trimmedExpr;
+          console.log("使用简单匹配模式搜索:", tag);
+
+          // 回退方案也使用按组匹配
+          const sequenceGroups = new Map();
+          data.forEach((row) => {
+            const groupId = row._sequenceGroup;
+            if (!groupId) return;
+
+            if (!sequenceGroups.has(groupId)) {
+              sequenceGroups.set(groupId, []);
+            }
+            sequenceGroups.get(groupId).push(row);
+          });
+
+          const matchedGroups = [];
+          sequenceGroups.forEach((groupRows) => {
+            const firstRow = groupRows[0];
+            if (!firstRow["标签"]) return;
+
+            const rowTags = this.parseTags(firstRow["标签"]);
+            if (
+              rowTags.some((rTag) =>
+                rTag.toLowerCase().includes(tag.toLowerCase())
+              )
+            ) {
+              matchedGroups.push(...groupRows);
+            }
+          });
+
+          return matchedGroups;
+        } catch (fallbackError) {
+          this.expressionError = `表达式错误: ${error.message}`;
+          console.error("标签筛选错误:", error);
+          return [];
+        }
+      }
+    },
+
+    // ------------------------------
+    // 标签表达式解析相关方法
+    // ------------------------------
 
     /**
      * 解析标签字符串，支持中英文分号分隔
@@ -862,6 +1612,7 @@ export default {
 
       return ast;
     },
+
     /**
      * 将AST转换为逻辑表达式字符串
      * @param {Object} ast - 抽象语法树
@@ -936,101 +1687,6 @@ export default {
     },
 
     /**
-     * 根据标签表达式筛选数据
-     * @param {Array} data - 原始数据
-     * @param {string} expression - 标签搜索表达式
-     * @returns {Array} 筛选后的数据
-     */
-    filterByTags(data, expression) {
-      const trimmedExpr = expression.trim();
-      if (!trimmedExpr) return data;
-
-      try {
-        this.expressionError = "";
-        const tokens = this.tokenizeExpression(trimmedExpr);
-        const ast = this.parseExpression(tokens);
-
-        // 检查是否包含"署名文章"标签
-        this.hasSignatureArticleTag = trimmedExpr
-          .toLowerCase()
-          .includes("署名文章");
-
-        // 生成并输出逻辑表达式到控制台
-        const logicalString = this.astToLogicalString(ast);
-        console.log("标签搜索逻辑:", logicalString);
-
-        // 按序号组分组
-        const sequenceGroups = new Map();
-        data.forEach((row) => {
-          const groupId = row._sequenceGroup;
-          if (!groupId) return;
-
-          if (!sequenceGroups.has(groupId)) {
-            sequenceGroups.set(groupId, []);
-          }
-          sequenceGroups.get(groupId).push(row);
-        });
-
-        // 2. 筛选符合条件的序号组
-        const matchedGroups = [];
-        sequenceGroups.forEach((groupRows) => {
-          // 使用组内第一行的标签作为整个组的标签
-          const firstRow = groupRows[0];
-          if (!firstRow["标签"]) return;
-
-          const groupTags = new Set(this.parseTags(firstRow["标签"]));
-          if (this.evaluateExpression(ast, groupTags)) {
-            matchedGroups.push(...groupRows);
-          }
-        });
-
-        return matchedGroups;
-      } catch (error) {
-        console.error("标签表达式解析错误:", error);
-        this.expressionError = `表达式错误: ${error.message}`;
-
-        // 尝试简单标签匹配作为回退方案
-        try {
-          const tag = trimmedExpr;
-          console.log("使用简单匹配模式搜索:", tag);
-
-          // 回退方案也使用按组匹配
-          const sequenceGroups = new Map();
-          data.forEach((row) => {
-            const groupId = row._sequenceGroup;
-            if (!groupId) return;
-
-            if (!sequenceGroups.has(groupId)) {
-              sequenceGroups.set(groupId, []);
-            }
-            sequenceGroups.get(groupId).push(row);
-          });
-
-          const matchedGroups = [];
-          sequenceGroups.forEach((groupRows) => {
-            const firstRow = groupRows[0];
-            if (!firstRow["标签"]) return;
-
-            const rowTags = this.parseTags(firstRow["标签"]);
-            if (
-              rowTags.some((rTag) =>
-                rTag.toLowerCase().includes(tag.toLowerCase())
-              )
-            ) {
-              matchedGroups.push(...groupRows);
-            }
-          });
-
-          return matchedGroups;
-        } catch (fallbackError) {
-          this.expressionError = `表达式错误: ${error.message}`;
-          console.error("标签筛选错误:", error);
-          return [];
-        }
-      }
-    },
-
-    /**
      * 检查AST中是否包含"署名文章"标签
      * @param {Object} ast - 抽象语法树
      * @returns {boolean} 是否包含"署名文章"标签
@@ -1054,285 +1710,14 @@ export default {
       return false;
     },
 
-    /**
-     * 根据日期范围和标签搜索数据
-     */
-    searchByDateRange() {
-      // 先应用日期筛选
-      let filtered = [...this.allData];
-      if (this.dateRange && this.dateRange.length === 2) {
-        const startDate = new Date(this.dateRange[0]);
-        const endDate = new Date(this.dateRange[1]);
-
-        // 显式设置时间部分，确保包含整个日期
-        startDate.setHours(0, 0, 0, 0); // 起始日期从当天0点开始
-        endDate.setHours(23, 59, 59, 999); // 结束日期到当天23:59:59结束
-
-        if (endDate < startDate) {
-          this.$message.warning({
-            message: "结束日期不能早于开始日期",
-            center: true,
-          });
-          return;
-        }
-
-        // 筛选日期在范围内的数据
-        filtered = filtered.filter((row) => {
-          if (!row["日期"]) return false;
-
-          const rowDate = this.parseDate(row["日期"]);
-          if (!rowDate) return false;
-
-          return rowDate >= startDate && rowDate <= endDate;
-        });
-      }
-      // 应用国家/落地媒体搜索筛选
-      if (this.searchType && this.searchKeyword) {
-        const keyword = this.searchKeyword.toLowerCase();
-        filtered = filtered.filter((row) => {
-          if (!row[this.searchType]) return false;
-          return String(row[this.searchType]).toLowerCase().includes(keyword);
-        });
-      }
-      // 再应用标签筛选
-      filtered = this.filterByTags(filtered, this.tagExpression);
-
-      this.filteredData = filtered;
-
-      // 触发筛选数据变化事件
-      this.$emit("filter-change", this.filteredData);
-
-      // 为每个分组的第一行添加序号
-      this.addSequenceToGroupFirstRows();
-
-      // 重置分组信息，确保筛选后重新计算分组颜色
-      this.sequenceGroups = null;
-      this.currentGroupId = 0;
-
-      // 如果没有筛选结果，显示提示信息
-      if (this.filteredData.length === 0) {
-        this.$message.info({
-          message: "没有找到符合条件的数据",
-          center: true,
-        });
-      } else {
-        // 检索成功提示
-        this.$message.success({
-          message: "检索成功",
-          center: true,
-        });
-      }
-    },
-
-    /**
-     * 为每个分组的第一行添加序号
-     */
-    addSequenceToGroupFirstRows() {
-      if (!this.filteredData || this.filteredData.length === 0) return;
-
-      const firstHeader = this.headers[0] || "序号";
-      let lastGroup = null;
-
-      this.filteredData.forEach((row) => {
-        const currentGroup = row._sequenceGroup;
-
-        // 如果是新分组的第一行且序号为空，则添加分组序号
-        if (
-          currentGroup &&
-          currentGroup !== lastGroup &&
-          (!row[firstHeader] || row[firstHeader] === "")
-        ) {
-          row[firstHeader] = currentGroup;
-          row[`${firstHeader}_isFiltered`] = true; // 标记为筛选时添加的序号
-        }
-
-        lastGroup = currentGroup;
-      });
-    },
-
-    /**
-     * 重置表格到初始状态
-     */
-    resetTable() {
-      // 保存当前状态用于比较
-      const currentState = {
-        dateRange: [...this.dateRange],
-        tagExpression: this.tagExpression,
-        searchType: this.searchType,
-        searchKeyword: this.searchKeyword,
-        filteredDataLength: this.filteredData.length,
-      };
-
-      // 强制重置所有筛选条件
-      this.dateRange = [];
-      this.isDateRangeInvalid = false;
-      this.tagExpression = "";
-      this.expressionError = "";
-      this.searchType = "";
-      this.searchKeyword = "";
-      // 重置署名文章标签状态
-      this.hasSignatureArticleTag = false;
-      // 强制恢复原始数据
-      this.filteredData = JSON.parse(JSON.stringify(this.originalData));
-      this.$emit("filter-change", this.filteredData);
-      // 移除筛选时添加的序号
-      const firstHeader = this.headers[0] || "序号";
-      this.filteredData.forEach((row) => {
-        if (row[`${firstHeader}_isFiltered`]) {
-          row[firstHeader] = "";
-          delete row[`${firstHeader}_isFiltered`];
-        }
-      });
-
-      // 重置分组信息，确保重置后重新计算分组颜色
-      this.sequenceGroups = null;
-      this.currentGroupId = 0;
-
-      // 使用$nextTick确保DOM更新后再显示消息，确保消息总是显示
-      this.$nextTick(() => {
-        this.$message.success({
-          message: "已复原表格",
-          center: true,
-          zIndex: 99999, // 确保消息在最上层显示
-        });
-      });
-    },
-
-    /**
-     * 填充序号列的空白值
-     * @param {Array} data - 原始数据
-     * @returns {Array} 处理后的新数据
-     */
-    fillSequenceNumbers: function (data) {
-      if (
-        !data ||
-        data.length === 0 ||
-        !this.headers ||
-        this.headers.length === 0
-      ) {
-        return data || [];
-      }
-
-      const processedData = JSON.parse(JSON.stringify(data));
-      const firstHeader = this.headers[0] || "序号";
-
-      // 增强的序号列判断逻辑
-      let isSequenceColumn = false;
-      let sequenceType = null; // 'number' | 'string' | null
-      let sequenceStart = null;
-      let sequenceStep = 1;
-
-      // 分析前20行数据来判断是否为序号列
-      const sampleRows = processedData.slice(0, 20);
-      const values = sampleRows
-        .map((row) => row[firstHeader])
-        .filter((value) => value != null && value !== "");
-
-      if (values.length > 0) {
-        // 检查是否为数字序列
-        const numbers = values.map((v) => Number(v)).filter((n) => !isNaN(n));
-        if (numbers.length > 0) {
-          isSequenceColumn = true;
-          sequenceType = "number";
-
-          // 分析序列步长
-          if (numbers.length >= 2) {
-            sequenceStep = numbers[1] - numbers[0];
-            let stepConsistent = true;
-            for (let i = 2; i < numbers.length; i++) {
-              if (numbers[i] - numbers[i - 1] !== sequenceStep) {
-                stepConsistent = false;
-                break;
-              }
-            }
-            if (stepConsistent) {
-              sequenceStart = numbers[0];
-            }
-          }
-        } else if (values.length > 0) {
-          // 检查是否为字符串序号
-          const hasSequenceKeywords = values.some((v) => {
-            const str = String(v).toLowerCase();
-            return (
-              str.includes("序号") || str.includes("编号") || str.includes("no")
-            );
-          });
-
-          if (hasSequenceKeywords) {
-            isSequenceColumn = true;
-            sequenceType = "string";
-          }
-        }
-      }
-
-      if (!isSequenceColumn) {
-        return processedData;
-      }
-
-      // 智能填充序号并添加分组标识
-      let lastSequenceValue = null;
-      let lastNumberValue = null;
-      let currentGroup = null; // 当前分组标识，用于记录当前行属于哪个序号组
-
-      processedData.forEach((row, index) => {
-        const currentValue = row[firstHeader];
-
-        if (currentValue != null && currentValue !== "") {
-          // 遇到新的有效序号值，开始新分组
-          lastSequenceValue = currentValue;
-          currentGroup = currentValue; // 设置当前分组为这个新序号值
-          row[`${firstHeader}_isOriginal`] = true;
-
-          // 如果是数字序号，记录数值用于后续填充
-          if (sequenceType === "number") {
-            lastNumberValue = Number(currentValue);
-          }
-        } else if (lastSequenceValue != null) {
-          // 空白值，继承上一个有效序号的分组，但不填充序号值
-          row[`${firstHeader}_isFilled`] = true;
-        }
-
-        // 为每一行添加分组标识，即使没有序号列也有分组
-        row._sequenceGroup = currentGroup;
-      });
-
-      return processedData;
-    },
-
-    /**
-     * 表格行样式类名
-     * @param {Object} param0 - 行信息
-     * @returns {string} 样式类名
-     */
-    tableRowClassName: function ({ row }) {
-      // 获取当前行的分组标识
-      const sequenceGroup = row._sequenceGroup;
-
-      // 初始化分组映射
-      if (!this.sequenceGroups) {
-        this.sequenceGroups = new Map();
-        this.currentGroupId = 0;
-      }
-
-      // 为新分组创建分组ID（仅当分组标识存在时）
-      if (
-        sequenceGroup !== undefined &&
-        sequenceGroup !== null &&
-        !this.sequenceGroups.has(sequenceGroup)
-      ) {
-        this.sequenceGroups.set(sequenceGroup, this.currentGroupId);
-        this.currentGroupId++;
-      }
-
-      // 根据分组ID返回交替样式类名
-      const groupId = this.sequenceGroups.get(sequenceGroup);
-      return groupId % 2 === 0 ? "group-a-row" : "group-b-row";
-    },
+    // ------------------------------
+    // 表格显示和样式相关方法
+    // ------------------------------
 
     /**
      * 计算表格高度
      */
-    calculateTableHeight: function () {
+    calculateTableHeight() {
       // 使用$nextTick确保DOM已完全渲染
       this.$nextTick(() => {
         if (this.isFullscreen) {
@@ -1366,154 +1751,80 @@ export default {
     },
 
     /**
-     * 判断内容是否过长
-     * @param {*} value - 单元格值
-     * @returns {boolean} 是否过长
+     * 打开作者搜索对话框
      */
-    isLongContent: function (value) {
-      if (value == null || value === "") return false;
-      const str = String(value);
-      return str.length > 30; // 超过30个字符视为长内容
+    openAuthorSearchDialog(signatureInfo) {
+      this.allSignatureInfo = signatureInfo;
+      this.authorSearchKeyword = "";
+      this.authorSearchDialogVisible = true;
     },
 
     /**
-     * 处理单元格悬停事件
-     * @param {number} rowIndex - 行索引
-     * @param {string} column - 列名
-     * @param {*} value - 单元格值
+     * 按作者名搜索
      */
-    handleCellHover: function (rowIndex, column, value) {
-      // 单元格悬停处理
-    },
-
-    /**
-     * 处理统计面板单元格悬停事件
-     * @param {*} content - 单元格内容
-     * @param {string} column - 列名
-     */
-    handleStatisticCellHover: function (content, column) {
-      // 使用现有的详情对话框显示统计面板单元格内容
-      this.detailContent = content != null ? String(content) : "";
-      this.detailColumn = column;
-      this.detailRow = "统计面板";
-      this.detailSequenceValue = "";
-      this.isFromStatistics = true; // 设置为从统计面板打开
-      this.detailDialogVisible = true;
-
-      // 全屏模式层级
-      this.$nextTick(() => {
-        this.fixDialogZIndex();
-      });
-    },
-
-    /**
-     * 处理统计对话框打开事件，确保垂直居中
-     */
-    handleStatisticsDialogOpen() {
-      this.$nextTick(() => {
-        const dialog = document.querySelector(".statistics-dialog .el-dialog");
-        if (dialog) {
-          // 强制设置垂直居中
-          dialog.style.position = "fixed";
-          dialog.style.top = "50%";
-          dialog.style.left = "50%";
-          dialog.style.transform = "translate(-50%, -50%)";
-          dialog.style.margin = "0";
-        }
-      });
-    },
-
-    /**
-     * 复制单元格内容到剪贴板
-     * @param {*} content - 要复制的内容
-     */
-    copyCellContent: function (content) {
-      if (content == null) return;
-
-      const text = String(content);
-      this.copyToClipboard(text);
-      this.$message.success({
-        message: "已复制到剪贴板",
-        center: true,
-      });
-    },
-
-    /**
-     * 显示单元格详情对话框
-     * @param {*} content - 单元格内容
-     * @param {string} column - 列名
-     * @param {number} row - 行号
-     */
-    showCellDetail: function (content, column, row) {
-      // 全屏模式下不显示详情对话框
-      if (this.isFullscreen) return;
-      this.detailContent = content != null ? String(content) : "";
-      this.detailColumn = column;
-      this.detailRow = row;
-      this.isFromStatistics = false; // 设置为从正常表格打开
-
-      // 获取序号值
-      if (
-        this.filteredData &&
-        this.filteredData.length > 0 &&
-        this.headers &&
-        this.headers.length > 0
-      ) {
-        const firstHeader = this.headers[0];
-        const rowData = this.filteredData[row - 1];
-        if (rowData && firstHeader) {
-          // 显示序号组信息
-          this.detailSequenceValue =
-            rowData._sequenceGroup || rowData[firstHeader] || "";
-        } else {
-          this.detailSequenceValue = "";
-        }
-      } else {
-        this.detailSequenceValue = "";
-      }
-
-      this.detailDialogVisible = true;
-
-      // 全屏模式层级
-      this.$nextTick(() => {
-        this.fixDialogZIndex();
-      });
-    },
-
-    /**
-     * 复制详情对话框内容
-     */
-    copyDetailContent: function () {
-      this.copyToClipboard(this.detailContent);
-      this.$message.success({
-        message: "已复制到剪贴板",
-        center: true,
-      });
-    },
-
-    /**
-     * 复制文本到剪贴板
-     * @param {string} text - 要复制的文本
-     */
-    copyToClipboard: function (text) {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-
-      try {
-        document.execCommand("copy");
-      } catch (err) {
-        console.error("复制失败:", err);
-        this.$message.error({
-          message: "复制失败，请手动复制",
+    searchByAuthor() {
+      if (!this.authorSearchKeyword.trim()) {
+        this.$message.warning({
+          message: "请输入作者名",
           center: true,
         });
-      } finally {
-        document.body.removeChild(textarea);
+        return;
       }
+
+      this.currentAuthorName = this.authorSearchKeyword.trim();
+      const lines = this.allSignatureInfo.split("\n");
+      const filteredLines = lines.filter((line) =>
+        line.toLowerCase().includes(this.currentAuthorName.toLowerCase())
+      );
+
+      this.authorResultContent =
+        filteredLines.length > 0
+          ? filteredLines.join("\n")
+          : `未找到包含作者"${this.currentAuthorName}"的署名文章`;
+
+      this.authorSearchDialogVisible = false;
+      this.authorResultDialogVisible = true;
+    },
+
+    /**
+     * 复制作者搜索结果
+     */
+    copyAuthorResultContent() {
+      this.copyToClipboard(this.authorResultContent);
+      this.$message.success({
+        message: "已复制到剪贴板",
+        center: true,
+      });
+    },
+
+    /**
+     * 表格行样式类名
+     * @param {Object} param0 - 行信息
+     * @returns {string} 样式类名
+     */
+    tableRowClassName({ row }) {
+      // 获取当前行的分组标识
+      const sequenceGroup = row._sequenceGroup;
+
+      // 初始化分组映射
+      if (!this.sequenceGroups) {
+        this.sequenceGroups = new Map();
+        this.currentGroupId = 0;
+      }
+
+      // 为新分组创建分组ID（仅当分组标识存在时）
+      if (
+        sequenceGroup !== undefined &&
+        sequenceGroup !== null &&
+        !this.sequenceGroups.has(sequenceGroup)
+      ) {
+        this.sequenceGroups.set(sequenceGroup, this.currentGroupId);
+        this.currentGroupId++;
+      }
+
+      // 根据分组ID返回交替样式类名
+      const groupId = this.sequenceGroups.get(sequenceGroup);
+      return groupId % 2 === 0 ? "group-a-row" : "group-b-row";
     },
 
     /**
@@ -1521,7 +1832,7 @@ export default {
      * @param {Object} param0 - 单元格信息
      * @returns {string} 样式类名
      */
-    tableCellClassName: function ({ row, column, rowIndex, columnIndex }) {
+    tableCellClassName({ row, column }) {
       if (this.isLongContent(row[column.property])) {
         return "long-content-cell"; // 长内容单元格样式
       }
@@ -1529,71 +1840,31 @@ export default {
     },
 
     /**
-     * 强制表格重新布局
+     * 判断内容是否过长
+     * @param {*} value - 单元格值
+     * @returns {boolean} 是否过长
      */
-    forceTableUpdate: function () {
-      this.$refs.dataTable &&
-        this.$refs.dataTable.doLayout &&
-        this.$refs.dataTable.doLayout();
+    isLongContent(value) {
+      if (value == null || value === "") return false;
+      const str = String(value);
+      return str.length > 30; // 超过30个字符视为长内容
     },
 
     /**
-     * 滚动到表格顶部
-     */
-    scrollToTop: function () {
-      const tableRef = this.$refs.dataTable;
-      if (tableRef && tableRef.$el) {
-        const tableWrapper = tableRef.$el.querySelector(
-          ".el-table__body-wrapper"
-        );
-        if (tableWrapper) {
-          tableWrapper.scrollTop = 0;
-        }
-      }
-    },
-
-    /**
-     * 滚动到表格底部
-     */
-    scrollToBottom: function () {
-      const tableRef = this.$refs.dataTable;
-      if (tableRef && tableRef.$el) {
-        const tableWrapper = tableRef.$el.querySelector(
-          ".el-table__body-wrapper"
-        );
-        if (tableWrapper) {
-          tableWrapper.scrollTop = tableWrapper.scrollHeight;
-        }
-      }
-    },
-
-    /**
-     * 切换全屏模式
-     */
-    toggleFullscreen: function () {
-      this.isFullscreen = !this.isFullscreen;
-      this.calculateTableHeight();
-
-      // 控制body滚动
-      if (this.isFullscreen) {
-        document.body.style.overflow = "hidden";
-      } else {
-        document.body.style.overflow = "";
-      }
-
-      // 强制表格重新布局
-      this.$nextTick(function () {
-        this.forceTableUpdate();
-      });
-    },
-
-    /**
-     * 获取列宽度
+     * 获取列宽度，缓存版
      * @param {string} header - 列头
      * @returns {number} 列宽度
      */
-    getColumnWidth: function (header) {
-      if (!this.allData || this.allData.length === 0) return 250;
+    getColumnWidth(header) {
+      // 如果缓存中有，直接返回
+      if (this.columnWidthCache[header] !== undefined) {
+        return this.columnWidthCache[header];
+      }
+
+      if (!this.allData || this.allData.length === 0) {
+        this.columnWidthCache[header] = 250;
+        return 250;
+      }
 
       // 取前100行数据计算最大内容长度
       const sampleValues = this.allData.slice(0, 100).map(function (row) {
@@ -1602,7 +1873,7 @@ export default {
         return String(value);
       });
 
-      // 计算最大长度（考虑列头和内容）
+      // 计算最大长度
       const maxLength = Math.max(
         header.length,
         ...sampleValues.map(function (str) {
@@ -1612,8 +1883,62 @@ export default {
 
       // 计算最小宽度
       const minWidth = Math.max(250, Math.min(maxLength * 15, 800));
+
+      // 存入缓存
+      this.columnWidthCache[header] = minWidth;
       return minWidth;
     },
+
+    /**
+     * 格式化单元格值
+     * @param {*} value - 原始值
+     * @param {Object} row - 当前行数据
+     * @param {string} column - 当前列名
+     * @returns {string} 格式化后的值
+     */
+    formatCellValue(value, row, column) {
+      if (value == null) return "";
+
+      // 获取当前列是否为序号列
+      const firstHeader = this.headers[0] || "序号";
+
+      // 序号列格式化 - 仅显示原始序号，分组行不显示
+      if (column === firstHeader) {
+        return row[`${firstHeader}_isOriginal`] ||
+          row[`${firstHeader}_isFiltered`]
+          ? value
+          : "";
+      }
+
+      // 数字格式化
+      if (typeof value === "number") {
+        if (Number.isInteger(value)) {
+          return value.toLocaleString(); // 整数格式化（带千分位）
+        }
+        return Number(value.toFixed(2)).toLocaleString(); // 小数格式化（保留两位小数）
+      }
+
+      // 布尔值格式化
+      if (typeof value === "boolean") {
+        return value ? "是" : "否";
+      }
+
+      // 其他类型转为字符串
+      return String(value);
+    },
+
+    /**
+     * 强制表格重新布局
+     */
+    forceTableUpdate() {
+      this.$refs.dataTable &&
+        this.$refs.dataTable.doLayout &&
+        this.$refs.dataTable.doLayout();
+    },
+
+    // ------------------------------
+    // 对话框和交互相关方法
+    // ------------------------------
 
     /**
      * 显示统计对话框并计算统计数据
@@ -1736,63 +2061,174 @@ export default {
     },
 
     /**
-     * 复制统计结果
+     * 显示分媒体统计对话框
      */
-    copyStatistics() {
-      if (!this.statisticsData || this.statisticsData.length === 0) return;
+    showMediaStatistics() {
+      this.calculateMediaStatistics();
+      this.mediaStatisticsDialogVisible = true;
+    },
 
-      const stats = this.statisticsData[0];
-      const text = `国家数: ${stats.countryCount}\n媒体数: ${stats.mediaCount}\n总落地次数: ${stats.totalViews}\n媒体详情: ${stats.mediaDetails}`;
+    /**
+     * 计算分媒体统计数据
+     */
+    calculateMediaStatistics() {
+      if (!this.filteredData || this.filteredData.length === 0) {
+        this.mediaStatisticsData = [];
+        return;
+      }
 
-      this.copyToClipboard(text);
-      this.$message.success({
-        message: "统计结果已复制到剪贴板",
-        center: true,
+      // 媒体统计Map: key为媒体名称, value为{views: 次数, articles: 篇数, sequences: 序号集合}
+      const mediaStats = new Map();
+      const sequenceColumn = this.headers[0] || "序号"; // 获取序号列名称
+
+      this.filteredData.forEach((row) => {
+        if (!row["落地媒体"] || row["落地媒体"] === "") return;
+
+        // 标准化媒体名称
+        const normalizedMedia = row["落地媒体"].trim().toLowerCase();
+        const originalMedia = row["落地媒体"].trim();
+
+        // 获取序号组标识
+        const sequenceGroup = row._sequenceGroup || "";
+
+        // 获取落地次数
+        const views = row["落地次数"] ? Number(row["落地次数"]) : 0;
+
+        // 如果媒体不存在, 初始化
+        if (!mediaStats.has(normalizedMedia)) {
+          mediaStats.set(normalizedMedia, {
+            media: originalMedia,
+            views: 0,
+            articles: 0,
+            sequences: new Set(),
+          });
+        }
+
+        const stats = mediaStats.get(normalizedMedia);
+        stats.views += views;
+
+        // 如果有有效的序号组, 添加到集合中
+        if (sequenceGroup) {
+          stats.sequences.add(sequenceGroup);
+          stats.articles = stats.sequences.size; // 篇数等于不同序号组的数量
+        }
+      });
+
+      // 转换为数组并排序
+      this.mediaStatisticsData = Array.from(mediaStats.values()).sort(
+        (a, b) => b.views - a.views
+      ); // 按落地次数降序排列
+
+      // 添加总计行
+      const totalViews = this.mediaStatisticsData.reduce(
+        (sum, item) => sum + item.views,
+        0
+      );
+      const totalArticles = this.mediaStatisticsData.reduce(
+        (sum, item) => sum + item.articles,
+        0
+      );
+      this.mediaStatisticsData.push({
+        media: "总计",
+        views: totalViews,
+        articles: totalArticles,
+        isTotal: true,
       });
     },
 
     /**
-     * 格式化单元格值
-     * @param {*} value - 原始值
-     * @param {Object} row - 当前行数据
-     * @param {string} column - 当前列名
-     * @returns {string} 格式化后的值
+     * 处理统计对话框打开事件，确保垂直居中
      */
-    formatCellValue: function (value, row, column) {
-      if (value == null) return "";
-
-      // 获取当前列是否为序号列
-      const firstHeader = this.headers[0] || "序号";
-
-      // 序号列格式化 - 仅显示原始序号，分组行不显示
-      if (column === firstHeader) {
-        return row[`${firstHeader}_isOriginal`] ||
-          row[`${firstHeader}_isFiltered`]
-          ? value
-          : "";
-      }
-
-      // 数字格式化
-      if (typeof value === "number") {
-        if (Number.isInteger(value)) {
-          return value.toLocaleString(); // 整数格式化（带千分位）
+    handleStatisticsDialogOpen() {
+      this.$nextTick(() => {
+        const dialog = document.querySelector(".statistics-dialog .el-dialog");
+        if (dialog) {
+          // 强制设置垂直居中
+          dialog.style.position = "fixed";
+          dialog.style.top = "50%";
+          dialog.style.left = "50%";
+          dialog.style.transform = "translate(-50%, -50%)";
+          dialog.style.margin = "0";
         }
-        return Number(value.toFixed(2)).toLocaleString(); // 小数格式化（保留两位小数）
+      });
+    },
+
+    /**
+     * 显示单元格详情对话框
+     * @param {*} content - 单元格内容
+     * @param {string} column - 列名
+     * @param {number} row - 行号
+     */
+    showCellDetail(content, column, row) {
+      // 全屏模式下不显示详情对话框
+      if (this.isFullscreen) return;
+      this.detailContent = content != null ? String(content) : "";
+      this.detailColumn = column;
+      this.detailRow = row;
+      this.isFromStatistics = false; // 设置为从正常表格打开
+
+      // 获取序号值
+      if (
+        this.filteredData &&
+        this.filteredData.length > 0 &&
+        this.headers &&
+        this.headers.length > 0
+      ) {
+        const firstHeader = this.headers[0];
+        const rowData = this.filteredData[row - 1];
+        if (rowData && firstHeader) {
+          // 显示序号组信息
+          this.detailSequenceValue =
+            rowData._sequenceGroup || rowData[firstHeader] || "";
+        } else {
+          this.detailSequenceValue = "";
+        }
+      } else {
+        this.detailSequenceValue = "";
       }
 
-      // 布尔值格式化
-      if (typeof value === "boolean") {
-        return value ? "是" : "否";
-      }
+      this.detailDialogVisible = true;
 
-      // 其他类型转为字符串
-      return String(value);
+      // 全屏模式层级
+      this.$nextTick(() => {
+        this.fixDialogZIndex();
+      });
+    },
+
+    /**
+     * 处理统计面板单元格悬停事件
+     * @param {*} content - 单元格内容
+     * @param {string} column - 列名
+     */
+    handleStatisticCellHover(content, column) {
+      // 使用现有的详情对话框显示统计面板单元格内容
+      this.detailContent = content != null ? String(content) : "";
+      this.detailColumn = column;
+      this.detailRow = "统计面板";
+      this.detailSequenceValue = "";
+      this.isFromStatistics = true; // 设置为从统计面板打开
+      this.detailDialogVisible = true;
+
+      // 全屏模式层级
+      this.$nextTick(() => {
+        this.fixDialogZIndex();
+      });
+    },
+
+    /**
+     * 处理单元格悬停事件
+     * @param {number} rowIndex - 行索引
+     * @param {string} column - 列名
+     * @param {*} value - 单元格值
+     */
+    handleCellHover(rowIndex, column, value) {
+      // 单元格悬停处理
     },
 
     /**
      * 对话框层级
      */
-    fixDialogZIndex: function () {
+    fixDialogZIndex() {
       if (!this.detailDialogVisible) return;
 
       this.$nextTick(() => {
@@ -1819,12 +2255,191 @@ export default {
         }
       });
     },
+
+    // ------------------------------
+    // 工具和辅助方法
+    // ------------------------------
+
+    /**
+     * 解析日期字符串
+     * @param {string} dateStr - 日期字符串，如"2025年1月2日"或"1月2日"
+     * @returns {Date} 解析后的日期对象
+     */
+    parseDate(dateStr) {
+      if (!dateStr) return null;
+
+      // 检查是否包含年份
+      const hasYear = /\d{4}年/.test(dateStr);
+
+      // 提取年、月、日
+      let year, month, day;
+
+      if (hasYear) {
+        // 带年份的格式：YYYY年MM月DD日
+        const match = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+        if (!match) return null;
+
+        year = parseInt(match[1]);
+        month = parseInt(match[2]) - 1; // 月份从0开始
+        day = parseInt(match[3]);
+      } else {
+        // 不带年份的格式：MM月DD日，默认使用当前年份
+        const match = dateStr.match(/(\d{1,2})月(\d{1,2})日/);
+        if (!match) return null;
+
+        year = new Date().getFullYear();
+        month = parseInt(match[1]) - 1; // 月份从0开始
+        day = parseInt(match[2]);
+      }
+
+      return new Date(year, month, day);
+    },
+
+    /**
+     * 复制单元格内容到剪贴板
+     * @param {*} content - 要复制的内容
+     */
+    copyCellContent(content) {
+      if (content == null) return;
+
+      const text = String(content);
+      this.copyToClipboard(text);
+      this.$message.success({
+        message: "已复制到剪贴板",
+        center: true,
+      });
+    },
+
+    /**
+     * 复制详情对话框内容
+     */
+    copyDetailContent() {
+      this.copyToClipboard(this.detailContent);
+      this.$message.success({
+        message: "已复制到剪贴板",
+        center: true,
+      });
+    },
+
+    /**
+     * 复制统计结果
+     */
+    copyStatistics() {
+      if (!this.statisticsData || this.statisticsData.length === 0) return;
+
+      const stats = this.statisticsData[0];
+      const text = `国家数: ${stats.countryCount}\n媒体数: ${stats.mediaCount}\n总落地次数: ${stats.totalViews}\n媒体详情: ${stats.mediaDetails}`;
+
+      this.copyToClipboard(text);
+      this.$message.success({
+        message: "统计结果已复制到剪贴板",
+        center: true,
+      });
+    },
+
+    /**
+     * 复制分媒体统计结果
+     */
+    copyMediaStatistics() {
+      if (!this.mediaStatisticsData || this.mediaStatisticsData.length === 0)
+        return;
+
+      let text = "媒体\t次数\t篇数\n";
+      this.mediaStatisticsData.forEach((item) => {
+        text += `${item.media}\t${item.views}\t${item.articles}\n`;
+      });
+
+      this.copyToClipboard(text);
+      this.$message.success({
+        message: "分媒体统计结果已复制到剪贴板",
+        center: true,
+      });
+    },
+
+    /**
+     * 复制文本到剪贴板
+     * @param {string} text - 要复制的文本
+     */
+    copyToClipboard(text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      try {
+        document.execCommand("copy");
+      } catch (err) {
+        console.error("复制失败:", err);
+        this.$message.error({
+          message: "复制失败，请手动复制",
+          center: true,
+        });
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    },
+
+    /**
+     * 滚动到表格顶部
+     */
+    scrollToTop() {
+      const tableRef = this.$refs.dataTable;
+      if (tableRef && tableRef.$el) {
+        const tableWrapper = tableRef.$el.querySelector(
+          ".el-table__body-wrapper"
+        );
+        if (tableWrapper) {
+          tableWrapper.scrollTop = 0;
+        }
+      }
+    },
+
+    /**
+     * 滚动到表格底部
+     */
+    scrollToBottom() {
+      const tableRef = this.$refs.dataTable;
+      if (tableRef && tableRef.$el) {
+        const tableWrapper = tableRef.$el.querySelector(
+          ".el-table__body-wrapper"
+        );
+        if (tableWrapper) {
+          tableWrapper.scrollTop = tableWrapper.scrollHeight;
+        }
+      }
+    },
+
+    /**
+     * 切换全屏模式
+     */
+    toggleFullscreen() {
+      this.isFullscreen = !this.isFullscreen;
+      this.calculateTableHeight();
+
+      // 控制body滚动
+      if (this.isFullscreen) {
+        document.body.style.overflow = "hidden";
+      } else {
+        document.body.style.overflow = "";
+      }
+
+      // 强制表格重新布局
+      this.$nextTick(function () {
+        this.forceTableUpdate();
+      });
+    },
   },
 };
 </script>
 
 <style scoped>
-/* 整体布局：表格组件容器样式 */
+/* ================================================
+   整体布局样式
+   ================================================ */
+
+/* 数据表格组件主容器样式 */
 .data-table {
   display: flex;
   flex-direction: column;
@@ -1835,7 +2450,11 @@ export default {
   border-radius: 12px;
 }
 
-/* 控制栏：日期选择器、标签搜索、复原按钮和操作按钮区域样式 */
+/* ================================================
+   控制栏样式
+   ================================================ */
+
+/* 控制栏容器：包含日期选择器、搜索框和操作按钮 */
 .table-controls {
   display: flex;
   align-items: center;
@@ -1849,6 +2468,7 @@ export default {
   overflow: hidden;
 }
 
+/* 控制栏左侧区域：包含日期选择器和搜索框 */
 .controls-left {
   display: flex;
   align-items: center;
@@ -1856,14 +2476,14 @@ export default {
   padding: 5px 0;
 }
 
-/* 日期选择器容器样式 */
+/* 日期选择器容器 */
 .date-range-container {
   display: flex;
   align-items: center;
   margin-right: 60px;
 }
 
-/* 国家/落地媒体搜索容器样式 - 前置选择器输入框样式 */
+/* 国家/落地媒体搜索输入框样式 */
 :deep(.category-search-input) {
   width: 330px;
   height: 40px;
@@ -1878,7 +2498,7 @@ export default {
   border: 1px solid #dcdfe6;
 }
 
-/* 输入框样式 */
+/* 输入框内部样式 */
 :deep(.input-with-select .el-input__inner) {
   padding: 0 15px;
   height: 40px;
@@ -1886,12 +2506,11 @@ export default {
   box-sizing: border-box;
 }
 
-/* 获得焦点时的样式 */
+/* 输入框获得焦点时的样式 */
 :deep(.category-search-input:focus-within .el-input__inner),
 :deep(.category-search-input:focus-within .el-select .el-select__input) {
   border-color: #409eff;
   box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.2);
-  /* 通过内边距补偿边框宽度变化 */
   padding: 0 14px;
 }
 
@@ -1899,7 +2518,8 @@ export default {
 :deep(.search-type-select .el-input__suffix-inner .el-icon) {
   color: #606266;
 }
-/* 标签搜索容器样式 */
+
+/* 标签搜索容器 */
 .tag-search-container {
   display: flex;
   align-items: center;
@@ -1908,10 +2528,12 @@ export default {
   position: relative;
 }
 
+/* 标签输入框 */
 .tag-input {
   flex: 1;
 }
 
+/* 表达式帮助按钮 */
 .expression-help-btn {
   width: 20px;
   height: 30px;
@@ -1921,10 +2543,12 @@ export default {
   padding: 0;
 }
 
+/* 表达式错误状态样式 */
 .expression-error {
   border-color: #f56c6c !important;
 }
 
+/* 表达式错误消息 */
 .expression-error-message {
   position: absolute;
   top: 100%;
@@ -1935,6 +2559,7 @@ export default {
   white-space: nowrap;
 }
 
+/* 控制栏右侧区域 */
 .controls-right {
   display: flex;
   align-items: center;
@@ -1944,42 +2569,41 @@ export default {
 .action-buttons {
   display: flex;
   align-items: center;
-  /* 统计和检索按钮之间间距 */
   gap: 30px;
 }
 
 /* 日期选择器样式 */
 :deep(.custom-date-picker.el-date-editor) {
   width: 330px !important;
-  display: inline-flex !important; /* 确保内部元素正确排列 */
+  display: inline-flex !important;
   align-items: center;
 }
 
+/* 日期范围分隔符样式 */
 :deep(.el-date-editor .el-range-separator) {
   padding: 0 12px;
   font-size: 15px;
   color: #606266;
   font-weight: 500;
-  white-space: nowrap; /* 确保"至"字不被截断 */
-  min-width: 30px; /* 增加最小宽度，确保"至"字完全显示 */
-  text-align: center; /* 明确设置文本居中 */
-  flex-shrink: 0; /* 防止被压缩 */
+  white-space: nowrap;
+  min-width: 30px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
+/* 日期输入框样式 */
 :deep(.el-date-editor .el-range-input) {
   padding: 0 15px;
   font-size: 14px;
   width: 130px;
-  height: 38px; /* 明确设置高度 */
+  height: 38px;
 }
 
-.controls-right {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
+/* ================================================
+   表格容器样式
+   ================================================ */
 
-/* 表格容器：包含表格的容器样式 */
+/* 表格容器：包含表格组件，支持全屏模式 */
 .table-container {
   flex: 1;
   min-height: 0;
@@ -1991,7 +2615,6 @@ export default {
   transition: all 0.3s ease;
   position: relative;
   z-index: 1;
-  /* 确保表格容器填充可用空间 */
   display: flex;
   flex-direction: column;
 }
@@ -2007,7 +2630,7 @@ export default {
     "Helvetica Neue", Arial, sans-serif;
 }
 
-/* 全屏模式：表格全屏显示样式 */
+/* 全屏模式表格容器样式 */
 .table-container.fullscreen {
   position: fixed;
   top: 20px;
@@ -2022,12 +2645,9 @@ export default {
   padding: 0;
 }
 
-/* 表格样式 - 文本居中 */
-:deep(.el-table) {
-  font-size: 0.92rem;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-}
+/* ================================================
+   表格内容样式
+   ================================================ */
 
 /* 表头样式 */
 :deep(.el-table th) {
@@ -2044,6 +2664,7 @@ export default {
   text-align: center;
 }
 
+/* 表头单元格样式 */
 :deep(.el-table th .cell) {
   color: white;
   font-weight: 500;
@@ -2067,8 +2688,9 @@ export default {
   transition: all 0.2s ease;
 }
 
+/* 表格行悬停效果 */
 :deep(.el-table tr:hover) {
-  background-color: inherit !important; /* 继承原有背景色 */
+  background-color: inherit !important;
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
@@ -2078,17 +2700,17 @@ export default {
   background: transparent !important;
 }
 
-/* 单元格文本居中 */
+/* 表格单元格样式 */
 :deep(.el-table td) {
   padding: 12px 8px;
   border-color: #f0f0f0;
   transition: background-color 0.2s;
   min-width: 220px;
-  text-align: center; /* 单元格整体居中 */
+  text-align: center;
   vertical-align: middle;
 }
 
-/* 单元格容器居中 */
+/* 单元格容器样式 */
 :deep(.cell-container) {
   display: flex;
   align-items: center;
@@ -2102,33 +2724,33 @@ export default {
   text-align: center;
 }
 
-/* 单元格内容居中 */
+/* 单元格内容容器 */
 :deep(.cell-content) {
   flex: 1;
   min-width: 0;
-  padding: 0 10px; /* 左右内边距相等 */
+  padding: 0 10px;
   position: relative;
   line-height: 1.5;
-  text-align: center; /* 内容在容器中居中 */
+  text-align: center;
   display: flex;
   justify-content: center;
   align-items: center;
   max-width: 100%;
 }
 
-/* 单元格文本居中 */
+/* 单元格文本样式 */
 :deep(.cell-text) {
-  text-align: center; /* 确保文本居中 */
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
   color: #333;
-  margin: 0 auto; /* 在容器中居中 */
-  max-width: 100%; /* 限制最大宽度 */
+  margin: 0 auto;
+  max-width: 100%;
 }
 
-/* 普通模式下，长内容显示省略号 */
+/* 普通模式下长内容显示省略号 */
 :deep(.cell-content.is-long:not(.fullscreen-expanded) .cell-text) {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2137,10 +2759,10 @@ export default {
   max-width: 100%;
   line-height: 1.5;
   color: #333;
-  text-align: center; /* 确保文本居中 */
+  text-align: center;
 }
 
-/* 普通模式短内容 */
+/* 普通模式短内容样式 */
 :deep(.cell-content:not(.is-long) .cell-text) {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2151,7 +2773,7 @@ export default {
   width: 100%;
 }
 
-/* 全屏模式下，长内容完全展开 */
+/* 全屏模式下长内容完全展开 */
 :deep(.cell-content.fullscreen-expanded .cell-text) {
   white-space: normal !important;
   word-break: break-word !important;
@@ -2165,7 +2787,11 @@ export default {
   text-align: center;
 }
 
-/* 操作按钮样式 */
+/* ================================================
+   单元格操作按钮样式
+   ================================================ */
+
+/* 单元格操作按钮容器 */
 :deep(.cell-actions) {
   position: absolute;
   right: 10px;
@@ -2184,11 +2810,13 @@ export default {
   z-index: 10;
 }
 
+/* 单元格悬停时显示操作按钮 */
 :deep(.cell-container:hover .cell-actions) {
   opacity: 1;
   transform: translateY(-50%) scale(1.05);
 }
 
+/* 操作按钮样式 */
 :deep(.cell-action-btn) {
   padding: 4px;
   min-height: auto;
@@ -2200,6 +2828,7 @@ export default {
   opacity: 0.8;
 }
 
+/* 操作按钮悬停效果 */
 :deep(.cell-action-btn:hover) {
   color: #409eff;
   background: #f0f9ff;
@@ -2208,15 +2837,21 @@ export default {
   opacity: 1;
 }
 
-/* 详情对话框 - 全屏模式层级 */
+/* ================================================
+   对话框样式
+   ================================================ */
+
+/* 详情对话框层级 */
 :deep(.cell-detail-dialog) {
   z-index: 2000 !important;
 }
 
+/* 全屏模式下详情对话框层级 */
 :deep(.cell-detail-dialog.fullscreen-dialog) {
   z-index: 100000 !important;
 }
 
+/* 对话框基础样式 */
 :deep(.cell-detail-dialog .el-dialog) {
   border-radius: 12px;
   overflow: hidden;
@@ -2231,26 +2866,31 @@ export default {
   margin: 0;
 }
 
+/* 对话框标题样式 */
 :deep(.cell-detail-dialog .el-dialog__title) {
   color: white;
   font-size: 1.2rem;
   font-weight: 600;
 }
 
+/* 对话框关闭按钮位置 */
 :deep(.cell-detail-dialog .el-dialog__headerbtn) {
   top: 20px;
   right: 20px;
 }
 
+/* 对话框关闭按钮样式 */
 :deep(.cell-detail-dialog .el-dialog__headerbtn .el-dialog__close) {
   color: white;
   font-size: 1.2rem;
 }
 
+/* 对话框内容区域样式 */
 :deep(.cell-detail-dialog .el-dialog__body) {
   padding: 0;
 }
 
+/* 对话框底部样式 */
 :deep(.cell-detail-dialog .el-dialog__footer) {
   padding: 20px;
   border-top: 1px solid #ebeef5;
@@ -2264,7 +2904,11 @@ export default {
   overflow-y: auto;
 }
 
-/* 信息卡片 */
+/* ================================================
+   信息卡片样式
+   ================================================ */
+
+/* 信息卡片容器 */
 .info-card {
   background: white;
   border-radius: 0;
@@ -2272,6 +2916,7 @@ export default {
   border-bottom: 1px solid #ebeef5;
 }
 
+/* 信息卡片头部 */
 .info-header {
   display: flex;
   align-items: center;
@@ -2281,27 +2926,32 @@ export default {
   border-bottom: 1px solid #ebeef5;
 }
 
+/* 信息卡片图标 */
 .info-header i {
   color: #409eff;
   font-size: 1.1rem;
 }
 
+/* 信息卡片标题 */
 .info-title {
   color: #303133;
   font-size: 1.1rem;
   font-weight: 600;
 }
 
+/* 信息卡片内容区域 */
 .info-content {
   padding: 20px;
 }
 
+/* 信息行容器 */
 .info-row {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
+/* 信息值样式 */
 .info-value {
   color: #303133;
   font-weight: 500;
@@ -2313,7 +2963,7 @@ export default {
   gap: 4px;
 }
 
-/* 信息项样式 */
+/* 信息项基础样式 */
 .info-item {
   padding: 6px 10px;
   border-radius: 6px;
@@ -2323,31 +2973,39 @@ export default {
   transition: all 0.2s ease;
 }
 
+/* 行信息项样式 */
 .row-item {
   background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
   color: #1890ff;
   border-color: #91d5ff;
 }
 
+/* 序号信息项样式 */
 .sequence-item {
   background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
   color: #52c41a;
   border-color: #b7eb8f;
 }
 
+/* 列信息项样式 */
 .column-item {
   background: linear-gradient(135deg, #fff2e8 0%, #ffd591 100%);
   color: #fa8c16;
   border-color: #ffc069;
 }
 
+/* 信息分隔符 */
 .info-separator {
   color: #d9d9d9;
   font-weight: 400;
   margin: 0 2px;
 }
 
-/* 内容卡片 */
+/* ================================================
+   内容卡片样式
+   ================================================ */
+
+/* 内容卡片容器 */
 .content-card {
   background: white;
   border-radius: 0;
@@ -2371,6 +3029,7 @@ export default {
   background: #8c8c8c;
 }
 
+/* 内容卡片头部 */
 .content-header {
   display: flex;
   align-items: center;
@@ -2380,17 +3039,20 @@ export default {
   border-bottom: 1px solid #ebeef5;
 }
 
+/* 内容卡片图标 */
 .content-header i {
   color: #67c23a;
   font-size: 1.1rem;
 }
 
+/* 内容卡片标题 */
 .content-title {
   color: #303133;
   font-size: 1.1rem;
   font-weight: 600;
 }
 
+/* 内容卡片主体区域 */
 .content-body {
   padding: 20px;
 }
@@ -2413,7 +3075,11 @@ export default {
   min-height: 100px;
 }
 
-/* 控制按钮组：右下角功能按钮 */
+/* ================================================
+   控制按钮组样式
+   ================================================ */
+
+/* 右下角控制按钮组容器 */
 .control-buttons {
   position: fixed;
   right: 25px;
@@ -2426,6 +3092,7 @@ export default {
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
 }
 
+/* 控制按钮基础样式 */
 .control-button {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   width: 50px;
@@ -2447,17 +3114,20 @@ export default {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* 控制按钮图标样式 */
 .control-button i {
   font-size: 20px;
   line-height: 1;
   transition: transform 0.2s;
 }
 
+/* 控制按钮悬停效果 */
 .control-button:hover {
   transform: translateY(-4px) scale(1.05);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
 
+/* 控制按钮图标悬停效果 */
 .control-button:hover i {
   transform: scale(1.1);
 }
@@ -2470,6 +3140,7 @@ export default {
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
+/* 滚动按钮悬停效果 */
 .scroll-button:hover {
   background: linear-gradient(135deg, #5a6fd8 0%, #6a4a9a 100%);
   box-shadow: 0 8px 20px rgba(102, 126, 234, 0.5);
@@ -2483,25 +3154,32 @@ export default {
   box-shadow: 0 4px 12px rgba(255, 77, 79, 0.4);
 }
 
+/* 退出全屏按钮悬停效果 */
 .exit-fullscreen-button:hover {
   background: linear-gradient(135deg, #ff3336 0%, #ff6666 100%);
   box-shadow: 0 8px 20px rgba(255, 77, 79, 0.5);
 }
 
-/* 分组背景色样式 - 加深颜色提高区分度 */
+/* ================================================
+   表格分组样式
+   ================================================ */
+
+/* 分组A行背景色 */
 :deep(.el-table tr.group-a-row) {
-  background-color: rgba(204, 232, 255, 0.7) !important; /* 加深的淡蓝色背景 */
+  background-color: rgba(204, 232, 255, 0.7) !important;
 }
 
+/* 分组B行背景色 */
 :deep(.el-table tr.group-b-row) {
-  background-color: rgba(220, 255, 204, 0.7) !important; /* 加深的淡绿色背景 */
+  background-color: rgba(220, 255, 204, 0.7) !important;
 }
 
-/* 悬停样式选择器，确保覆盖Element UI默认样式 */
+/* 表格行悬停时单元格样式 */
 :deep(.el-table__body tr:hover td) {
-  background-color: inherit !important; /* 继承行的背景色 */
+  background-color: inherit !important;
 }
 
+/* 表格行悬停效果 */
 :deep(.el-table tr:hover) {
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
@@ -2512,14 +3190,9 @@ export default {
   background: transparent !important;
 }
 
-/* 分组背景色样式 - 加深颜色提高区分度 */
-:deep(.el-table tr.group-a-row) {
-  background-color: rgba(204, 232, 255, 0.7) !important; /* 加深的淡蓝色背景 */
-}
-
-:deep(.el-table tr.group-b-row) {
-  background-color: rgba(220, 255, 204, 0.7) !important; /* 加深的淡绿色背景 */
-}
+/* ================================================
+   统计对话框样式
+   ================================================ */
 
 /* 统计对话框样式 */
 :deep(.statistics-dialog .el-dialog) {
@@ -2528,32 +3201,38 @@ export default {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
 }
 
+/* 统计对话框头部 */
 :deep(.statistics-dialog .el-dialog__header) {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
   margin: 0;
 }
 
+/* 统计对话框标题 */
 :deep(.statistics-dialog .el-dialog__title) {
   color: white;
   font-size: 1.2rem;
   font-weight: 600;
 }
 
+/* 统计对话框关闭按钮 */
 :deep(.statistics-dialog .el-dialog__headerbtn .el-dialog__close) {
   color: white;
   font-size: 1.2rem;
 }
 
+/* 统计内容区域 */
 .statistics-content {
   padding: 20px;
-  overflow-x: auto; /* 允许横向滚动 */
+  overflow-x: auto;
 }
 
+/* 统计表格最小宽度 */
 :deep(.statistics-dialog .el-table) {
-  min-width: 600px; /* 设置最小宽度 */
+  min-width: 600px;
 }
 
+/* 统计表格表头 */
 :deep(.statistics-dialog .el-table th) {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -2561,12 +3240,14 @@ export default {
   text-align: center;
 }
 
+/* 统计表格单元格 */
 :deep(.statistics-dialog .el-table td) {
   text-align: center;
   vertical-align: middle;
-  white-space: nowrap; /* 防止内容换行 */
+  white-space: nowrap;
 }
 
+/* 统计表格单元格内容 */
 :deep(.statistics-dialog .el-table .cell) {
   white-space: nowrap;
   overflow: hidden;
@@ -2579,10 +3260,12 @@ export default {
   position: relative;
 }
 
+/* 统计面板单元格悬停效果 */
 :deep(.statistic-cell:hover) {
   color: #409eff;
   text-decoration: underline;
 }
+
 /* 统计面板媒体详情列自动省略号样式 */
 :deep(.statistics-dialog .cell-text) {
   white-space: nowrap;
@@ -2591,7 +3274,12 @@ export default {
   display: block;
   width: 100%;
 }
-/* 增强无数据状态样式的特异性 */
+
+/* ================================================
+   无数据状态样式
+   ================================================ */
+
+/* 无数据状态表格样式 */
 :deep(.el-table.no-data) {
   display: flex;
   flex-direction: column;
@@ -2628,11 +3316,179 @@ export default {
   font-size: 16px;
   color: #606266;
 }
-/* 提高所有Element UI消息提示的层级，确保在全屏表格上方显示 */
+
+/* ================================================
+   分媒体统计对话框样式
+   ================================================ */
+
+/* 分媒体统计对话框样式 */
+:deep(.media-statistics-dialog .el-dialog) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* 分媒体统计对话框头部 */
+:deep(.media-statistics-dialog .el-dialog__header) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  margin: 0;
+}
+
+/* 分媒体统计对话框标题 */
+:deep(.media-statistics-dialog .el-dialog__title) {
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+/* 分媒体统计对话框关闭按钮 */
+:deep(.media-statistics-dialog .el-dialog__headerbtn .el-dialog__close) {
+  color: white;
+  font-size: 1.2rem;
+}
+
+/* 分媒体统计内容区域 */
+.media-statistics-content {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* 分媒体统计表格表头 */
+:deep(.media-statistics-dialog .el-table th) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* 分媒体统计表格单元格 */
+:deep(.media-statistics-dialog .el-table td) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* 分媒体统计总计行样式 */
+:deep(.media-statistics-dialog .el-table tr:last-child td) {
+  background-color: #f5f7fa;
+  font-weight: bold;
+  font-size: 15px;
+  color: #1890ff;
+  border-top: 2px solid #1890ff;
+}
+
+/* ================================================
+   作者搜索相关样式
+   ================================================ */
+
+/* 作者搜索输入框 */
+:deep(.author-search-input) {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* 作者标签样式 */
+.info-item.author-item {
+  background: linear-gradient(135deg, #fff0f6 0%, #ffadd2 100%);
+  color: #f5222d;
+  border-color: #ffb7b2;
+}
+
+/* 作者搜索结果对话框样式 */
+:deep(.author-result-dialog .el-dialog) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* 作者搜索结果对话框头部 */
+:deep(.author-result-dialog .el-dialog__header) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  margin: 0;
+}
+
+/* 作者搜索结果对话框标题 */
+:deep(.author-result-dialog .el-dialog__title) {
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+/* 作者搜索结果对话框关闭按钮 */
+:deep(.author-result-dialog .el-dialog__headerbtn .el-dialog__close) {
+  color: white;
+  font-size: 1.2rem;
+}
+
+/* 简化后的单元格文本样式 */
+.simplified-cell-text {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  color: #333;
+  padding: 8px 5px;
+  box-sizing: border-box;
+  cursor: default;
+  /* 添加一个微妙的悬停效果，提示可交互 */
+  transition: background-color 0.2s;
+}
+.simplified-cell-text:hover {
+  background-color: #f5f7fa;
+}
+
+/* 流程指示箭头样式 */
+.process-arrow {
+  /* 视觉设计 - 明显醒目 */
+  font-size: 20px; /* 更大，更醒目 */
+  color: #409eff; /* 使用主题蓝色，与"检索"按钮颜色呼应 */
+
+  /* 布局控制 - 关键：完全补偿箭头宽度，保持视觉间距不变 */
+  margin: 0 -20px; /* 核心调整：负边距补偿箭头自身宽度 + 部分gap */
+  vertical-align: middle;
+  line-height: 1;
+
+  /* 视觉增强 */
+  text-shadow: 0 1px 3px rgba(64, 158, 255, 0.3);
+  position: relative;
+  z-index: 1;
+
+  /* 精确控制宽度 */
+  width: 20px; /* 明确限制箭头宽度 */
+  display: inline-block;
+  text-align: center;
+  box-sizing: border-box;
+
+  /* 交互效果 */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.9;
+}
+
+/* 悬停效果 - 增强视觉引导 */
+.action-buttons:hover .process-arrow {
+  color: #337ecc; /* 悬停时颜色加深 */
+  transform: scale(1.1); /* 轻微放大 */
+  text-shadow: 0 2px 6px rgba(64, 158, 255, 0.4);
+  opacity: 1;
+}
+/* ================================================
+   全局样式调整
+   ================================================ */
+
+/* 提高所有Element UI消息提示的层级 */
 body.el-message {
   z-index: 2000 !important;
 }
-/* 响应式设计 */
+
+/* ================================================
+   响应式设计
+   ================================================ */
+
+/* 移动端适配 */
 @media (max-width: 768px) {
   .data-table {
     padding: 10px;

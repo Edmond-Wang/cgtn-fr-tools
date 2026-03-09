@@ -143,7 +143,7 @@ export default {
         header: true,
         dynamicTyping: true,
         skipEmptyLines: true,
-        worker: false,
+        worker: true,
         encoding: "UTF-8",
         delimitersToGuess: [",", ";", "\t", "|"],
         preview: 0,
