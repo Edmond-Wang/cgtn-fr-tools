@@ -26,7 +26,7 @@
       
       <!-- 页脚 -->
       <div class="home-footer">
-        <p>CSV文件分析工具 | version 1.0.0</p>
+        <p>CSV文件分析工具 | version 1.0.1</p>
       </div>
     </div>
   </div>
